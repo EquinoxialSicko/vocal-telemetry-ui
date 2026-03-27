@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vocal Telemetry Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Custom Dropdown Styling to fix arrow spacing */
+        select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="%23555" d="M7 10l5 5 5-5z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 15px center; 
+            padding-right: 40px; 
+            padding-left: 15px; 
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        /* Base Styles */
+        body { font-family: sans-serif; background-color: #f4f4f9; padding: 20px; display: flex; gap: 20px; }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .form-panel { flex: 1; max-width: 400px; }
+        .menu-panel { flex: 2; display: flex; flex-direction: column; gap: 15px; justify-content: center;}
+        
+        /* Form Inputs */
+        input, select, button { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; }
+        .submit-btn { background-color: #333; color: white; border: none; cursor: pointer; }
+        .submit-btn:hover { background-color: #555; }
+
+        /* Dashboard Menu Buttons */
+        .dashboard-menu { display: flex; flex-direction: column; gap: 10px; }
+        .dashboard-menu button { background: #2c3e50; border-radius: 5px; font-weight: bold; color: white; border: none; padding: 15px; cursor: pointer; font-size: 16px;}
+        .dashboard-menu button:hover { background: #1a252f; }
+
+        /* The Dark Background Overlay for Modal */
+        .modal {
+            display: none; position: fixed; z-index: 1000; 
+            left: 0; top: 0; width: 100%; height: 100%; 
+            background-color: rgba(0,0,0,0.7); backdrop-filter: blur(4px); 
+        }
+
+        /* The Graph Window in the Center */
+        .modal-content {
+            background-color: #fefefe; margin: 5% auto; padding: 20px;
+            border-radius: 12px; width: 80%; max-width: 900px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); position: relative;
+        }
+
+        /* The Close Button */
+        .close-btn { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close-btn:hover { color: #000; }
+
+        /* Guide Icon & Content */
+        .help-icon { cursor: pointer; color: #3498db; font-weight: bold; margin-left: 5px; font-size: 16px; border-radius: 50%; padding: 0 5px; background: #e8f4f8;}
+        .help-icon:hover { color: white; background: #2980b9; }
+        .guide-content { max-height: 60vh; overflow-y: auto; text-align: left; padding-right: 15px; }
+        .guide-content p { font-size: 14px; line-height: 1.5; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-top: 10px;}
+        .guide-content strong { color: #c0392b; }
+    </style>
+</head>
+<body>
+
+    <div class="panel form-panel">
+        <h2>Log Daily Riyaz</h2>
+        <form id="riyazForm" autocomplete="off">
+            <label>Raga</label>
+            <input type="text" id="raga" required>
+            
+            <label>Pitch (Sa)</label>
+            <input type="text" id="pitch" required>
+            
+            <label>Strain Level (1-10) <span class="help-icon" onclick="openStrainGuide()">ⓘ</span></label>
+            <input type="number" id="strain" min="1" max="10" required>
+
+            <label>Duration (Minutes)</label>
+            <input type="number" id="duration" min="1" required>
+
+            <label>Time of Day</label>
+            <select id="timeOfDay" required>
+                <option value="Morning">Morning (6AM - 12PM)</option>
+                <option value="Afternoon">Afternoon (12PM - 6PM)</option>
+                <option value="Evening">Evening (6PM+)</option>
+            </select>
+
+            <label>Hydration Level (1-10) <span class="help-icon" onclick="openHydrationGuide()">ⓘ</span></label>
+            <input type="number" id="hydration" min="1" max="10" required>
+            
+            <label>Notes / Shrutis</label>
+            <input type="text" id="notes">
+            
+            <button type="submit" class="submit-btn">Submit Telemetry</button>
+        </form>
+        <p id="statusMessage"></p>
+    </div>
+
+    <div class="panel menu-panel">
+        <h2>Telemetry Diagnostics</h2>
+        <div class="dashboard-menu">
+            <button onclick="openModal('strain')">📈 Rate of Recovery (Strain Over Time)</button>
+            <button onclick="openModal('sweetSpot')">🎯 Acoustic Sweet Spot (Pitch)</button>
+            <button onclick="openModal('raga')">📊 Raga Complexity Load</button>
+            <button onclick="openModal('degradation')">⏳ Endurance Limit (Duration vs. Strain)</button>
+            <button onclick="openModal('circadian')">🌒 Circadian Matrix (Time of Day)</button>
+        </div>
+    </div>
+
+    <div id="graphModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeModal()">&times;</span> 
+            <h2 id="modalTitle">Graph Data</h2>
+            <canvas id="masterChart" style="max-height: 65vh;"></canvas> 
+        </div>
+    </div>
+
+    <div id="strainGuideModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeStrainGuide()">&times;</span> 
+            <h2>Vocal Telemetry Scale (1-10)</h2>
+            <div class="guide-content">
+                <p><strong>1 - Absolute Resonance:</strong> Perfect diaphragmatic support (Nabhi). Seamless movement across saptaks, zero neck tension.</p>
+                <p><strong>2 - Micro-Friction:</strong> Mostly clean phonation. Slight breathiness/air escaping on sustained notes, but pitch remains perfectly anchored.</p>
+                <p><strong>3 - Abdominal Over-Pressurization:</strong> Pushing too hard from the diaphragm to force heavy folds to vibrate. Tone is loud/heavy, but taans feel sluggish.</p>
+                <p><strong>4 - Nasal Compensation:</strong> Pushing sound into the nasal cavity to avoid chest fatigue. Tone becomes thin/whiny; faking high shrutis.</p>
+                <p><strong>5 - Passaggio Instability:</strong> Precarious upper register. Wobbling pitch requiring active physical manipulation of jaw/breath to prevent a crack.</p>
+                <p><strong>6 - The Falsetto Flip:</strong> Involuntary register shifting. Chest register taps out, voice breaks into a weak, hollow falsetto.</p>
+                <p><strong>7 - Mechanical Fracture:</strong> Voice audibly cracks, stutters, or drops out. Continuous glides (Meend) break into jagged steps.</p>
+                <p><strong>8 - Glottal Squeezing:</strong> Abandoned stomach support. Squeezing neck muscles (throat singing). Harsh, tight, strident tone.</p>
+                <p><strong>9 - Vocal Choking:</strong> Severe supraglottic constriction. Wide Akar feels strangled. Forced to unconsciously modify vowels to get sound out.</p>
+                <p><strong>10 - The Hard Stop:</strong> Physical discomfort, dull aching, burning (sandpaper feeling), or total pitch loss. Immediate session stop required.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="hydrationGuideModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeHydrationGuide()">&times;</span> 
+            <h2>Vocal Hydration Scale (1-10)</h2>
+            <div class="guide-content">
+                <p><strong>1 - Optimal Viscosity:</strong> Perfect mucosal lubrication. Vocal folds are coated in a thin, watery layer. Absolute zero friction. Fast taans and high-register notes slide effortlessly.</p>
+                <p><strong>2 - Functional Moisture:</strong> Clean phonation and resonance, but requires occasional swallowing or a sip of room-temperature water between exercises to maintain the glide.</p>
+                <p><strong>3 - Mild Tackiness:</strong> The mucus layer is starting to thicken slightly. Tone is mostly clean, but the very top of the upper register (Taar Saptak) feels slightly hesitant or requires a tiny bit more breath pressure.</p>
+                <p><strong>4 - Phlegmatic Coating:</strong> "Morning voice" territory. Folds feel slightly puffy or coated in thick mucus. Requires an extended, slow warm-up (like low Kharaj practice) to thin the mucus out.</p>
+                <p><strong>5 - Friction Onset:</strong> Noticeable localized dryness. You feel a slight "tickle" in the throat or an urge to clear your throat/cough after executing heavy glides (meend).</p>
+                <p><strong>6 - Sticky Phonation:</strong> The mucus is thick, sticky, and actively resisting vibration. The folds struggle to cleanly peel apart, resulting in a muffled, veiled, or slightly delayed tone.</p>
+                <p><strong>7 - Scratchy Vibration:</strong> Dryness is actively impeding the hardware. Singing feels audibly scratchy. The highest frequencies begin to drop out completely because the dry folds physically cannot vibrate fast enough.</p>
+                <p><strong>8 - Systemic Dryness:</strong> "Cotton mouth" and dry throat. Saliva is noticeably thick. Swallowing feels dry. Attempting to sing requires pushing through immediate, uncomfortable friction.</p>
+                <p><strong>9 - Abrasive Scraping:</strong> The protective mucosal boundary is severely compromised. The vocal folds are essentially hitting each other bare. Even normal speaking feels harsh, raspy, and fatiguing.</p>
+                <p><strong>10 - Desiccated (The Desert):</strong> Absolute sandpaper. Zero functional lubrication. Attempting to sing physically hurts and guarantees tissue inflammation. Mandatory hard stop and heavy systemic rehydration needed.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "https://vocal-telemetry-api.onrender.com/api/logs";
+        
+        let chartInstance = null;
+        let globalTelemetryData = [];
+
+        // 1. Fetch Database on Startup (GET)
+        async function fetchDatabase() {
+            try {
+                const response = await fetch(API_URL);
+                let data = await response.json();
+                if (!Array.isArray(data)) data = [data];
+                globalTelemetryData = data;
+                console.log("Telemetry loaded:", globalTelemetryData);
+            } catch (err) {
+                console.error("Data fetch failed:", err);
+            }
+        }
+
+        // 2. Handle Form Submission (POST)
+        document.getElementById('riyazForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const sessionData = {
+                raga: document.getElementById('raga').value,
+                pitch: document.getElementById('pitch').value,
+                strainLevel: parseInt(document.getElementById('strain').value),
+                durationMins: parseInt(document.getElementById('duration').value),
+                timeOfDay: document.getElementById('timeOfDay').value,
+                hydrationLevel: parseInt(document.getElementById('hydration').value),
+                notes: document.getElementById('notes').value
+            };
+
+            document.getElementById('statusMessage').innerText = "Transmitting to DB...";
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(sessionData)
+                });
+
+                if (response.ok) {
+                    document.getElementById('statusMessage').innerText = "Data logged successfully to SQL!";
+                    document.getElementById('riyazForm').reset();
+                    fetchDatabase(); // Instantly refresh the graphs in the background!
+                }
+            } catch (err) {
+                document.getElementById('statusMessage').innerText = "Connection failed.";
+            }
+        });
+
+        // 3. MATH ENGINE: Grouping and Averaging 
+        function getAverageByKey(data, keyColumn, valueColumn) {
+            const totals = {};
+            const counts = {};
+
+            data.forEach(row => {
+                let key = row[keyColumn];
+                let value = parseFloat(row[valueColumn]);
+
+                if (!key || isNaN(value)) return;
+
+                key = key.trim().toLowerCase();
+                key = key.charAt(0).toUpperCase() + key.slice(1);
+
+                if (!totals[key]) { totals[key] = 0; counts[key] = 0; }
+                
+                totals[key] += value;
+                counts[key] += 1;
+            });
+
+            const labels = Object.keys(totals);
+            const averages = labels.map(label => (totals[label] / counts[label]).toFixed(1));
+
+            return { labels, averages };
+        }
+
+        // 4. DRAW: Strain Graph (Line)
+        function drawStrainGraph(ctx, data) {
+            const labels = data.map((row, index) => `${row.raga} (Session ${index + 1})`);
+            const strainData = data.map(row => row.strainLevel);
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Vocal Strain',
+                        data: strainData,
+                        borderColor: '#e74c3c', backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                        borderWidth: 2, tension: 0.3, fill: true
+                    }]
+                },
+                options: { scales: { y: { min: 0, max: 10 } } }
+            });
+        }
+
+        // 5. DRAW: Sweet Spot Graph (Bar)
+        function drawSweetSpotGraph(ctx, data) {
+            const result = getAverageByKey(data, "pitch", "strainLevel");
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: result.labels,
+                    datasets: [{
+                        label: 'Average Strain by Pitch',
+                        data: result.averages,
+                        backgroundColor: 'rgba(52, 152, 219, 0.6)', borderColor: '#2980b9', borderWidth: 1
+                    }]
+                },
+                options: { scales: { y: { min: 0, max: 10 } } }
+            });
+        }
+
+        // 6. DRAW: Raga Graph (Bar)
+        function drawRagaGraph(ctx, data) {
+            const result = getAverageByKey(data, "raga", "strainLevel");
+
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: result.labels,
+                    datasets: [{
+                        label: 'Average Strain by Raga',
+                        data: result.averages,
+                        backgroundColor: 'rgba(155, 89, 182, 0.6)', borderColor: '#8e44ad', borderWidth: 1
+                    }]
+                },
+                options: { scales: { y: { min: 0, max: 10 } } }
+            });
+        }
+
+        // 7. DRAW: Degradation Scatter Plot (Duration vs Strain)
+        function drawDegradationGraph(ctx, data) {
+            const scatterData = data
+                .filter(row => row.durationMins && row.strainLevel)
+                .map(row => ({ x: parseFloat(row.durationMins), y: parseFloat(row.strainLevel) }));
+
+            chartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: 'Practice Sessions',
+                        data: scatterData,
+                        backgroundColor: '#e67e22', pointRadius: 6, pointHoverRadius: 8
+                    }]
+                },
+                options: { 
+                    scales: { 
+                        x: { title: { display: true, text: 'Duration (Minutes)' }, min: 0 },
+                        y: { title: { display: true, text: 'Strain Level (1-10)' }, min: 0, max: 10 } 
+                    } 
+                }
+            });
+        }
+
+        // 8. DRAW: Circadian Radar Chart
+        function drawCircadianGraph(ctx, data) {
+            const result = getAverageByKey(data, "timeOfDay", "strainLevel");
+            
+            const orderedLabels = ["Morning", "Afternoon", "Evening"];
+            const orderedData = orderedLabels.map(label => {
+                const index = result.labels.indexOf(label);
+                return index !== -1 ? result.averages[index] : 0;
+            });
+
+            chartInstance = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: orderedLabels,
+                    datasets: [{
+                        label: 'Average Strain by Time of Day',
+                        data: orderedData,
+                        backgroundColor: 'rgba(26, 188, 156, 0.4)', borderColor: '#16a085',
+                        pointBackgroundColor: '#16a085', borderWidth: 2
+                    }]
+                },
+                options: { scales: { r: { min: 0, max: 10, ticks: { stepSize: 2 } } } }
+            });
+        }
+
+        // 9. Modal UI Routing
+        function openModal(graphType) {
+            document.getElementById('graphModal').style.display = "block";
+            const ctx = document.getElementById('masterChart').getContext('2d');
+            
+            if (chartInstance) { chartInstance.destroy(); }
+
+            if (graphType === 'strain') {
+                document.getElementById('modalTitle').innerText = "Vocal Strain Over Time";
+                drawStrainGraph(ctx, globalTelemetryData);
+            } 
+            else if (graphType === 'sweetSpot') {
+                document.getElementById('modalTitle').innerText = "Strain vs. Base Pitch";
+                drawSweetSpotGraph(ctx, globalTelemetryData);
+            }
+            else if (graphType === 'raga') {
+                document.getElementById('modalTitle').innerText = "Raga Complexity Load";
+                drawRagaGraph(ctx, globalTelemetryData);
+            }
+            else if (graphType === 'degradation') {
+                document.getElementById('modalTitle').innerText = "Vocal Degradation (Duration vs Strain)";
+                drawDegradationGraph(ctx, globalTelemetryData);
+            }
+            else if (graphType === 'circadian') {
+                document.getElementById('modalTitle').innerText = "Circadian Strain Matrix";
+                drawCircadianGraph(ctx, globalTelemetryData);
+            }
+        }
+
+        function closeModal() { document.getElementById('graphModal').style.display = "none"; }
+        function openStrainGuide() { document.getElementById('strainGuideModal').style.display = "block"; }
+        function closeStrainGuide() { document.getElementById('strainGuideModal').style.display = "none"; }
+        function openHydrationGuide() { document.getElementById('hydrationGuideModal').style.display = "block"; }
+        function closeHydrationGuide() { document.getElementById('hydrationGuideModal').style.display = "none"; }
+
+        // 10. Pull the database the second the webpage opens!
+        fetchDatabase();
+    </script>
+</body>
+</html>
